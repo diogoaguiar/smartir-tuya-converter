@@ -1,5 +1,9 @@
 # smartir-tuya-converter
 
+> **Deprecated:** This project has been superseded by [**tuya-ir**](https://github.com/diogoaguiar/tuya-ir), which includes the same converter plus a Daikin IR code generator. Use `tuya-ir convert` as a drop-in replacement.
+
+---
+
 Convert [SmartIR](https://github.com/litinoveweedle/SmartIR) device code files from Broadlink (Base64) format to Tuya (Raw/MQTT) format for use with Zigbee2MQTT IR blasters.
 
 ## Why
