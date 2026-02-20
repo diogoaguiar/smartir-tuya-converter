@@ -49,7 +49,7 @@ func main() {
 
 	// Check for supported format
 	if !f.IsBroadlink() {
-		fmt.Fprintf(os.Stderr, "Error: unsupported commandsEncoding %q (expected \"Base64\")\n", f.CommandsEncoding)
+		fmt.Fprintf(os.Stderr, "Error: unsupported commandsEncoding %q (expected \"Base64\")\n", f.CommandsEncoding())
 		os.Exit(1)
 	}
 

@@ -247,11 +247,11 @@ func emitDistanceBlock(out *bytes.Buffer, length int, distance int) {
 		if length >= (1 << 8) {
 			panic(fmt.Sprintf("length too large: %d (max %d)", length+2, TuyaMaxMatchLength))
 		}
-		// Header with length=7, then distance bytes, then extra length byte
+		// Header with length=7, then extra length byte, then distance low byte
 		block = []byte{
 			byte(7<<5 | distance>>8),
-			byte(distance & 0xFF),
 			byte(length - 7),
+			byte(distance & 0xFF),
 		}
 	} else {
 		// Short match: encode length in header
