@@ -1,6 +1,8 @@
 package converter
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -225,6 +227,124 @@ func TestConvertCommands_Recursive(t *testing.T) {
 	}
 
 	t.Logf("Successfully converted 4-level nested code: %d bytes", len(code16))
+}
+
+// TestConvertBroadlinkToTuya_GoldenReference tests that our Go converter output
+// decompresses to the same raw IR data as the Python reference converter.
+// The compressed bytes may differ (different match-finding strategies), but the
+// decompressed raw data must be identical — this is what the IR blaster transmits.
+func TestConvertBroadlinkToTuya_GoldenReference(t *testing.T) {
+	testFiles := []struct {
+		broadlink string
+		reference string
+	}{
+		{"../testdata/1109.json", "../testdata/1109_tuya_reference.json"},
+		{"../testdata/1116.json", "../testdata/1116_tuya_reference.json"},
+	}
+
+	for _, tf := range testFiles {
+		t.Run(tf.broadlink, func(t *testing.T) {
+			if _, err := os.Stat(tf.broadlink); os.IsNotExist(err) {
+				t.Skipf("Test data not found: %s", tf.broadlink)
+			}
+			if _, err := os.Stat(tf.reference); os.IsNotExist(err) {
+				t.Skipf("Reference data not found: %s", tf.reference)
+			}
+
+			// Load Broadlink source
+			srcData, err := os.ReadFile(tf.broadlink)
+			if err != nil {
+				t.Fatalf("Failed to read source: %v", err)
+			}
+			var srcJSON map[string]interface{}
+			if err := json.Unmarshal(srcData, &srcJSON); err != nil {
+				t.Fatalf("Failed to parse source JSON: %v", err)
+			}
+
+			// Load Python reference
+			refData, err := os.ReadFile(tf.reference)
+			if err != nil {
+				t.Fatalf("Failed to read reference: %v", err)
+			}
+			var refJSON map[string]interface{}
+			if err := json.Unmarshal(refData, &refJSON); err != nil {
+				t.Fatalf("Failed to parse reference JSON: %v", err)
+			}
+
+			// Convert with our Go converter
+			srcCommands := srcJSON["commands"].(map[string]interface{})
+			goConverted, err := ConvertCommands(srcCommands)
+			if err != nil {
+				t.Fatalf("Go conversion failed: %v", err)
+			}
+
+			refCommands := refJSON["commands"].(map[string]interface{})
+
+			// Recursively compare all codes
+			var compared, matched int
+			var compareCommands func(goMap, refMap map[string]interface{}, path string)
+			compareCommands = func(goMap, refMap map[string]interface{}, path string) {
+				for key, goVal := range goMap {
+					refVal, ok := refMap[key]
+					if !ok {
+						t.Errorf("Key %s/%s missing from reference", path, key)
+						continue
+					}
+
+					switch gv := goVal.(type) {
+					case string:
+						rv, ok := refVal.(string)
+						if !ok {
+							t.Errorf("Type mismatch at %s/%s", path, key)
+							continue
+						}
+
+						compared++
+
+						// Decompress both and compare raw data
+						goCompressed, err := base64.StdEncoding.DecodeString(gv)
+						if err != nil {
+							t.Errorf("Failed to decode Go base64 at %s/%s: %v", path, key, err)
+							continue
+						}
+						refCompressed, err := base64.StdEncoding.DecodeString(rv)
+						if err != nil {
+							t.Errorf("Failed to decode ref base64 at %s/%s: %v", path, key, err)
+							continue
+						}
+
+						goRaw := decompressTuya(goCompressed)
+						refRaw := decompressTuya(refCompressed)
+
+						if !bytes.Equal(goRaw, refRaw) {
+							t.Errorf("Raw IR data mismatch at %s/%s: Go=%d bytes, Ref=%d bytes",
+								path, key, len(goRaw), len(refRaw))
+						} else {
+							matched++
+						}
+
+					case map[string]interface{}:
+						rv, ok := refVal.(map[string]interface{})
+						if !ok {
+							t.Errorf("Type mismatch at %s/%s", path, key)
+							continue
+						}
+						compareCommands(gv, rv, path+"/"+key)
+					}
+				}
+			}
+
+			compareCommands(goConverted, refCommands, "")
+			t.Logf("Compared %d codes, %d matched (%s)", compared, matched, tf.broadlink)
+
+			if compared == 0 {
+				t.Error("No codes were compared")
+			}
+			if matched != compared {
+				t.Errorf("%d/%d codes had mismatched raw IR data", compared-matched, compared)
+			}
+		})
+	}
 }
 
 // BenchmarkConvertBroadlinkToTuya benchmarks the conversion performance.
